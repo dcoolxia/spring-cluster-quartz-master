@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+            http://www.springframework.org/schema/beans/spring-beans-4.0.xsd http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <context:component-scan base-package="com.aaron.clusterquartz.job"/>
+<!-- 引入参数配置文件 -->
+	<bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<property name="locations">
+			<list>
+				<value>classpath:jdbc.properties</value>
+			</list>
+		</property>
+	</bean>
+	
+   <!--  <bean name="dataSource" class="org.springframework.jndi.JndiObjectFactoryBean">
+        tomcat
+        <property name="jndiName" value="java:comp/env/jndi/mysql/quartz"/>
+
+        jboss
+        <property name="jndiName" value="java:/MysqlDS/quartz"/>
+    </bean> -->
+    <!-- <bean id="wall-filter" class="com.alibaba.druid.wall.WallFilter">
+	    <property name="dbType" value="mysql" />
+	</bean> -->
+
+	<!-- 数据源,事务管理配置文件 -->
+	<!-- alibaba druid datasource -->
+	<bean id="dataSource" class="com.alibaba.druid.pool.DruidDataSource" init-method="init" destroy-method="close">
+		<property name="url" value="${jdbc.url}" />
+		<property name="username" value="${jdbc.username}" />
+		<property name="password" value="${jdbc.password}" />
+		
+		<!-- 监控数据库 -->
+		<property name="filters" value="stat" />
+		
+		<!-- 连接池最大使用连接数量 -->
+		<property name="maxActive" value="100" />
+		<!-- 初始化连接大小 -->
+		<property name="initialSize" value="10" />
+		<!-- 获取连接最大等待时间 -->
+		<property name="maxWait" value="60000" />
+		<!-- 连接池最小空闲 -->
+		<property name="minIdle" value="0" />
+		
+		<!-- 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒 -->
+		<property name="timeBetweenEvictionRunsMillis" value="60000" />
+		 <!-- 配置一个连接在池中最小生存的时间，单位是毫秒 -->
+		<property name="minEvictableIdleTimeMillis" value="300000" />
+		
+		<property name="validationQuery" value="SELECT 1 from dual" />
+		<property name="testWhileIdle" value="true" />
+		<property name="testOnBorrow" value="false" />
+		<property name="testOnReturn" value="false" />
+		
+		<!-- 打开removeAbandoned功能 -->
+		<property name="removeAbandoned" value="true"></property>
+		<!-- 1800秒，也就是30分钟 -->
+		<property name="removeAbandonedTimeout" value="3600"></property>
+		<property name="connectionProperties" value="druid.stat.slowSqlMillis=3000" />
+		
+	</bean>
+    <!-- 分布式事务配置 start -->
+
+    <!-- 配置线程池-->
+    <bean name="executor" class="org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor">
+        <property name="corePoolSize" value="15"/>
+        <property name="maxPoolSize" value="25"/>
+        <property name="queueCapacity" value="100"/>
+    </bean>
+
+    <bean name="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSource"/>
+    </bean>
+
+    <!-- 配置调度任务-->
+    <bean name="quartzScheduler" class="org.springframework.scheduling.quartz.SchedulerFactoryBean">
+        <property name="configLocation" value="classpath:quartz.properties"/>
+        <property name="dataSource" ref="dataSource"/>
+        <property name="transactionManager" ref="transactionManager"/>
+
+        <!-- 任务唯一的名称，将会持久化到数据库-->
+        <property name="schedulerName" value="baseScheduler"/>
+
+        <!-- 每台集群机器部署应用的时候会更新触发器-->
+        <property name="overwriteExistingJobs" value="true"/>
+        <property name="applicationContextSchedulerContextKey" value="appli"/>
+
+        <property name="jobFactory">
+            <bean class="com.aaron.clusterquartz.autowired.AutowiringSpringBeanJobFactory"/>
+        </property>
+
+        <property name="triggers">
+            <list>
+                <ref bean="printCurrentTimeScheduler"/>
+            </list>
+        </property>
+        <property name="jobDetails">
+            <list>
+                <ref bean="printCurrentTimeJobs"/>
+            </list>
+        </property>
+
+        <property name="taskExecutor" ref="executor"/>
+
+    </bean>
+
+    <!-- 配置Job详情 -->
+    <bean name="printCurrentTimeJobs" class="org.springframework.scheduling.quartz.JobDetailFactoryBean">
+        <property name="jobClass" value="com.aaron.clusterquartz.job.PrintCurrentTimeJobs"/>
+        <!--<property name="jobDataAsMap">
+            <map>
+                <entry key="clusterQuartz" value="com.aaron.framework.clusterquartz.job.ClusterQuartz"/>
+            </map>
+        </property>-->
+        <property name="durability" value="true"/>
+        <property name="requestsRecovery" value="false"/>
+    </bean>
+
+    <!-- 配置触发时间 -->
+    <bean name="printCurrentTimeScheduler" class="org.springframework.scheduling.quartz.CronTriggerFactoryBean">
+        <property name="jobDetail" ref="printCurrentTimeJobs"/>
+        <property name="cronExpression">
+            <value>0/10 * * * * ?</value>
+        </property>
+        <property name="timeZone">
+            <value>GMT+8:00</value>
+        </property>
+    </bean>
+
+    <!-- 分布式事务配置 end -->
+</beans>
